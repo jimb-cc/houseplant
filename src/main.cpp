@@ -10,6 +10,9 @@ const int LDR_READ_PIN= 36;
 const int MOIST_POWER_PIN= 26;
 const int MOIST_READ_PIN= 39;
 
+RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR char name[15] = CLIENT;
+
 SHT3X sht30(0x45);
 StaticJsonDocument<500> doc;
 
@@ -20,7 +23,7 @@ void setup()
 {
   pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(115200);
- 
+  digitalWrite(LED_BUILTIN, HIGH);
   Serial.print("Connecting to ");
   Serial.print(ssid);
   Serial.print(" with password ");
@@ -34,12 +37,13 @@ void setup()
   Serial.println("");
   Serial.print("Connected to WiFi network with IP Address: ");
   Serial.println(WiFi.localIP());
- 
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 
 void POSTData()
 {
+      
       if(WiFi.status()== WL_CONNECTED){
       HTTPClient http;
 
@@ -51,11 +55,43 @@ void POSTData()
 
       Serial.println(json);
       int httpResponseCode = http.POST(json);
+      Serial.println(httpResponseCode);
       }
 }
 
 
+void getDevice()
+{
 
+    esp_sleep_wakeup_cause_t wakeup_reason;
+    wakeup_reason = esp_sleep_get_wakeup_cause();
+
+    uint64_t chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
+    Serial.printf("***ESP32 Chip ID = %04X%08X\n",(uint16_t)(chipid>>32),(uint32_t)chipid);//print High 2 bytes
+    char buffer[200];
+    sprintf(buffer, "%04X%08X",(uint16_t)(chipid>>32),(uint32_t)chipid);
+    //sprintf(buffer, "esp32%" PRIu64, ESP.getEfuseMac());
+
+    // int vbatt_raw = 0;
+    // for (int i=0;i<SAMPLES;i++)
+    // {
+    //    vbatt_raw += analogRead(PIN_POWER);
+    //    delay(100);
+    // }
+    // vbatt_raw = vbatt_raw/SAMPLES;
+    //float vbatt = map(vbatt_raw, 0, 4096, 0, 4200);
+
+    doc["device"]["IP"] = WiFi.localIP().toString();
+    doc["device"]["RSSI"] = String(WiFi.RSSI());
+    doc["device"]["type"] = TYPE;
+    doc["device"]["name"] = name;
+    doc["device"]["chipid"] = buffer;
+    doc["device"]["bootCount"] = bootCount;
+    doc["device"]["wakeup_reason"] = String(wakeup_reason);
+    //doc["device"]["vbatt_raw"] = vbatt_raw;
+    //doc["device"]["vbatt"] = map(vbatt_raw, 0, 4096, 0, 4200);
+
+}
 
 
 int senseMoisture(int powerPin, int readPin)
@@ -119,8 +155,10 @@ int senseLight(int readPin)
 
 void loop()
 {
+  ++bootCount; // move this to setup()
   // turn the LED on (HIGH is the voltage level)
   digitalWrite(LED_BUILTIN, HIGH);
+  getDevice();
   senseLight(LDR_READ_PIN);
   senseMoisture(MOIST_POWER_PIN, MOIST_READ_PIN);
   senseTemp();
