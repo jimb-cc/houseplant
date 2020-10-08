@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <WEMOS_SHT3X.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "secrets.h"
 
 const int SAMPLES= 10;
 const int LDR_READ_PIN= 36;
@@ -10,12 +13,50 @@ const int MOIST_READ_PIN= 39;
 SHT3X sht30(0x45);
 StaticJsonDocument<500> doc;
 
+
+
+
 void setup()
 {
   pinMode(LED_BUILTIN, OUTPUT);
   Serial.begin(115200);
-  
+ 
+  Serial.print("Connecting to ");
+  Serial.print(ssid);
+  Serial.print(" with password ");
+  Serial.println(password);
+
+  WiFi.begin(ssid, password);
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to WiFi network with IP Address: ");
+  Serial.println(WiFi.localIP());
+ 
 }
+
+
+void POSTData()
+{
+      if(WiFi.status()== WL_CONNECTED){
+      HTTPClient http;
+
+      http.begin(serverName);
+      http.addHeader("Content-Type", "application/json");
+
+      String json;
+      serializeJson(doc, json);
+
+      Serial.println(json);
+      int httpResponseCode = http.POST(json);
+      }
+}
+
+
+
+
 
 int senseMoisture(int powerPin, int readPin)
 {
@@ -30,6 +71,7 @@ int senseMoisture(int powerPin, int readPin)
   doc["sensors"]["moisture"] = reading;
   return reading;
 }
+
 
 float senseTemp()
 {
@@ -84,11 +126,40 @@ void loop()
   senseTemp();
   senseHumid();
   digitalWrite(LED_BUILTIN, LOW);
-  delay(5000);
-  Serial.println();
+  delay(10000);
+  Serial.println("Posting...");
+  POSTData();
   serializeJsonPretty(doc, Serial);
-  Serial.println();
+  Serial.println("\nDone.");
 }
 
 
 
+/*
+
+MongoDB Atlas Realm Function
+----------------------------
+
+
+
+exports = function(payload){
+    var atlas = context.services.get("mongodb-atlas");
+    var coll = atlas.db("iot").collection("readings");
+    try {
+      if (payload.body) 
+      {
+        body = EJSON.parse(payload.body.text());
+      }
+      coll.insertOne(body);
+      console.log(body);
+
+    } catch (e) {
+      console.log("Error inserting sensor reading doc: " + e);
+      return e.message();
+    }
+};
+
+
+
+----------------
+*/
